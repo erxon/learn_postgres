@@ -18,29 +18,51 @@ const db = new pg.Client({
 
 db.connect();
 
-app.get("/", async (req, res) => {
+const checkVisited = async () => {
   const result = await db.query("SELECT country_code FROM visited_countries");
   const countries = result.rows.map((item) => {
     return item.country_code;
   });
 
-  res.render("index.ejs", { countries: countries, total: result.rowCount });
+  return countries;
+};
+
+app.get("/", async (req, res) => {
+  const countries = await checkVisited();
+  res.render("index.ejs", { countries: countries, total: countries.length });
 });
 
 app.post("/add", async (req, res) => {
   const country = req.body.country;
-  const result = await db.query(
-    "SELECT country_code FROM world_countries WHERE country_name=$1",
-    [country]
-  );
-  if (result.rowCount > 0) {
+  try {
+    const result = await db.query(
+      "SELECT country_code FROM world_countries WHERE LOWER(country_name) LIKE '%' || $1 || '%'",
+      [country.toLowerCase()]
+    );
+
     const countryCode = result.rows[0].country_code;
 
-    const insert = await db.query(
-      "INSERT INTO visited_countries (country_code) VALUES ($1)",
-      [countryCode]
-    );
-    res.redirect("/");
+    try {
+      await db.query(
+        "INSERT INTO visited_countries (country_code) VALUES ($1)",
+        [countryCode]
+      );
+      res.redirect("/");
+    } catch (error) {
+      const countries = await checkVisited();
+      res.render("index.ejs", {
+        countries: countries,
+        total: countries.length,
+        error: "Country already added",
+      });
+    }
+  } catch (error) {
+    const countries = await checkVisited();
+    res.render("index.ejs", {
+      countries: countries,
+      total: countries.length,
+      error: "Country does not exist",
+    });
   }
 });
 
